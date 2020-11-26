@@ -4,12 +4,12 @@ pragma solidity 0.7.0;
 contract Ownable {
 
   address public owner;
-  address public transactionFee;
-  address public buyBack;
+  address public feeAddress;
+  address public reserveAddress;
 
   event OwnershipTransferred(address newOwner);
-  event TransactionFeeTransferred(address newTransactionFee);
-  event BuyBackTransferred(address newBuyBack);
+  event FeeAddressTransferred(address newFeeAddress);
+  event ReserveAddressTransferred(address newReserveAddress);
 
   constructor() {
     owner = msg.sender;
@@ -24,12 +24,12 @@ contract Ownable {
     owner = newOwner;
   }
 
-  function transferTransactionFee(address newTransactionFee) onlyOwner internal {
-    transactionFee = newTransactionFee;
+  function transferFeeAddress(address newFeeAddress) onlyOwner internal {
+    feeAddress = newFeeAddress;
   }
 
-  function transferBuyBack(address newBuyBack) onlyOwner internal {
-    buyBack = newBuyBack;
+  function transferReserveAddress(address newReserveAddress) onlyOwner internal {
+    reserveAddress = newReserveAddress;
   }
 
 }

@@ -11,46 +11,21 @@ contract TreasuryBondsPlus is Ownable, IERC20 {
 
   string public constant name = 'Treasury Bonds Plus';
   string public constant symbol = 'TB+';
-  uint8 public constant decimals = 2;
+  uint8 public constant decimals = 8;
 
   uint private _totalSupply;
-  uint public tokenPrice;
-
-  struct PurchaseRecord {
-    uint date;
-    uint quantity;
-  }
 
   mapping(address => uint) private _balances;
   mapping(address => mapping(address => uint)) private _allowed;
-  mapping(address => PurchaseRecord[]) private _purchaseRecords;
-  mapping(address => bool) private _approvedKYC;
-  mapping(uint8 => uint8) public yieldPerMonth;
 
   event Mint(address indexed to, uint tokens);
   event Burn(address indexed account, uint tokens);
-  event Repurchase(address indexed tokenOwner, uint tokens);
+  event BuyBack(address indexed tokenOwner, uint tokens);
 
-  constructor(address _transactionFee, address _buyBack) {
-    _totalSupply = 200000 * 10 **uint(decimals);
-    tokenPrice = 1; // 1 Dollar
-    transactionFee = _transactionFee;
-    buyBack = _buyBack;
-
-    for (uint8 i=12; i <= 120; i++) {
-      uint8 mpy;
-      if (i <= 23) mpy = 50; // 0,50 %
-      else if (i <= 35) mpy = 60; // 0,60 %
-      else if (i <= 47) mpy = 70; // 0,70 %
-      else if (i <= 59) mpy = 80; // 0,80 %
-      else if (i <= 71) mpy = 90; // 0,90 %
-      else if (i <= 83) mpy = 100; // 1,00 %
-      else if (i <= 95) mpy = 120; // 1,20 %
-      else if (i <= 107) mpy = 140; // 1,40 %
-      else if (i <= 119) mpy = 160; // 1,60 %
-      else mpy = 180; // 1,80 %
-      yieldPerMonth[i] = mpy;
-    }
+  constructor(address _feeAddress, address _reserveAddress) {
+    _totalSupply = 50000000 * 10 **uint(decimals);
+    feeAddress = _feeAddress;
+    reserveAddress = _reserveAddress;
 
     _balances[owner] = _totalSupply;
     emit Transfer(address(0), owner, _totalSupply);
@@ -68,12 +43,11 @@ contract TreasuryBondsPlus is Ownable, IERC20 {
     return _allowed[tokenOwner][spender];
   }
 
-  function transfer(address to, uint tokens) public override returns (bool success) {  
+  function transfer(address to, uint tokens) public override returns (bool success) {
+    require(tokens >= 1000000, 'The minimum amount of tokens that can be transferred is 0.01.');
+
     uint tax = 0;
-    if (msg.sender != owner) {
-      require(tokens >= 100 * 10 **uint(decimals), 'The minimum token quantity is 100.');
-      tax = _setTax(tokens);
-    } else require(tokens >= 1 * 10 ** uint(decimals), 'The minimum that can be sold is 1.');
+    if (msg.sender != owner) tax = _setTax(tokens);
 
     _transfer(msg.sender, to, tokens, tax);
     return true;
@@ -89,7 +63,7 @@ contract TreasuryBondsPlus is Ownable, IERC20 {
   }
 
   function transferFrom(address from, address to, uint tokens) public override returns (bool success) {
-    require(tokens >= 100 * 10 **uint(decimals), 'The minimum quantity of tokens that can be transferred is 100.');
+    require(tokens >= 1000000, 'The minimum amount of tokens that can be transferred is 0.01.');
     require(_allowed[from][msg.sender] >= tokens, 'Quantity of tokens allowed is insufficient!');
     require(to == msg.sender, 'The receiving address must be the same as the one calling the function!');
 
@@ -116,29 +90,14 @@ contract TreasuryBondsPlus is Ownable, IERC20 {
     emit Burn(account, tokens);
   }
 
-  function repurchase(address tokenOwner, uint tokens) public onlyOwner returns (bool success) {
+  function buyBack(address tokenOwner, uint tokens) public onlyOwner returns (bool success) {
     require(_balances[tokenOwner] >= tokens, 'Insufficient tokens!');
 
     _balances[tokenOwner] = _balances[tokenOwner].sub(tokens);
-    _balances[buyBack] = _balances[buyBack].add(tokens);
+    _balances[reserveAddress] = _balances[reserveAddress].add(tokens);
     
-    emit Repurchase(tokenOwner, tokens);
+    emit BuyBack(tokenOwner, tokens);
     return true;
-  }
-
-  function purchaseRecords(address tokenOwner) public view onlyOwner returns (PurchaseRecord[] memory) {
-    return _purchaseRecords[tokenOwner];
-  }
-
-  function approveKYC(address account) public onlyOwner returns (bool success) {
-    require(!(_approvedKYC[account]), 'The address already exists!');
-
-    _approvedKYC[account] = true;
-    return true;
-  }
-
-  function getApprovedKYC(address account) public view onlyOwner returns (bool status) {
-    return _approvedKYC[account];
   }
 
   function newOwner(address account) public onlyOwner returns (bool success) {
@@ -152,26 +111,30 @@ contract TreasuryBondsPlus is Ownable, IERC20 {
     return true;
   }
 
-  function newTransactionFee(address account) public onlyOwner returns (bool success) {
-    require(account != transactionFee, 'The address of the new transaction_fee must be different from the current one.');
+  function newFeeAddress(address account) public onlyOwner returns (bool success) {
+    require(account != feeAddress, 'The new feeAddress must be different from the current one.');
 
-    address oldTransactionFee = transactionFee;
-    transferTransactionFee(account);
-    _balances[account] = _balances[oldTransactionFee];
-    _balances[oldTransactionFee] = 0;
-    TransactionFeeTransferred(account);
+    address oldFeeAddress = feeAddress;
+    transferFeeAddress(account);
+    _balances[account] = _balances[oldFeeAddress];
+    _balances[oldFeeAddress] = 0;
+    FeeAddressTransferred(account);
     return true;
   }
 
-  function newBuyBack(address account) public onlyOwner returns (bool success) {
-    require(account != buyBack, 'the address of the new buy_back must be different from the current one.');
+  function newReserveAddress(address account) public onlyOwner returns (bool success) {
+    require(account != reserveAddress, 'The new reserveAddress must be different from the current one.');
 
-    address oldBuyBack = buyBack;
-    transferBuyBack(account);
-    _balances[account] = _balances[oldBuyBack];
-    _balances[oldBuyBack] = 0;
-    BuyBackTransferred(account);
+    address oldReserveAddress = reserveAddress;
+    transferReserveAddress(account);
+    _balances[account] = _balances[oldReserveAddress];
+    _balances[oldReserveAddress] = 0;
+    ReserveAddressTransferred(account);
     return true;
+  }
+
+  function close() public onlyOwner {
+    selfdestruct(payable(owner));
   }
 
   function _setTax(uint tokens) private pure returns (uint) {
@@ -202,16 +165,11 @@ contract TreasuryBondsPlus is Ownable, IERC20 {
     uint tokensWithTax = tokens;
     if (tax > 0) {
       tokensWithTax = tokens - tax;
-      _balances[transactionFee] = _balances[transactionFee].add(tax);
+      _balances[feeAddress] = _balances[feeAddress].add(tax);
     }
     
     _balances[sender] = _balances[sender].sub(tokens);
     _balances[recipient] = _balances[recipient].add(tokensWithTax);
-      
-    _purchaseRecords[recipient].push(PurchaseRecord({
-      date: block.timestamp,
-      quantity: tokensWithTax
-    }));
 
     emit Transfer(sender, recipient, tokens);
   }
